@@ -12,6 +12,8 @@
 // #        left wheel encoder  -> Digital pin 2
 // #        right wheel encoder -> Digital pin 3
 // #
+// this is a test to see if I can change on a different computer...
+
 #include <AFMotor.h>
 void InitSerial(int); 
 void PrintEncoders();
