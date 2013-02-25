@@ -17,8 +17,8 @@
 const int RIGHT               = 0;
 const int LEFT                = 1;
 
-const int ENC_DIST_SLOW       = 17;   // point at which we slow down to hit encoder target exactly
-const int ENC_SPEED_SLOW      = 25;  // speed percent used to approach target encoder
+const int ENC_DIST_SLOW       = 20;   // point at which we slow down to hit encoder target exactly
+const int ENC_SPEED_SLOW      = 50;  // speed percent used to approach target encoder
 
 const int LED_PIN             = 13;
 
@@ -29,8 +29,6 @@ const int MIN_RUN_TIME        = 100; // milliseconds after a motor run command..
 int motor_speed = 100;
 int pwm;
 
-//const float PI                = 3.1415927;
-
 // FORWARD, BACKWARD, BRAKE, RELEASE
 int DirectionLeft;   // used to determine whether to increment or decrement the encoder
 int DirectionRight;  // used to determine whether to increment or decrement the encoder
@@ -38,7 +36,12 @@ int DirectionRight;  // used to determine whether to increment or decrement the 
 void InitSerial(int baud_rate); 
 int CalculateEncoderTarget(float inches);
 int Drive(DriveDirection drive_dir, int drive_speed, float drive_distance); 
+
 void Turn(TurnType turn_type, TurnDirection turn_dir, int drive_speed, float drive_distance); 
+// about 6.5 inches across width of robot
+// POINT TURNS: 3.25" radius, 20.4" circumference, 10.2" (180 degree), 5.1" (90 degree)
+// SWING TURNS: 6.5" radius, 13" dia, 40.8" circumference, 20.4" (180), 10.2" (90 degree)
+
 int SetSpeed(int encoder_current_value, int encoder_target_value, int target_speed_pct);
 int SetDriveDirection(DriveDirection drive_direction, int encoder_current_value, int encoder_target_value);
 void StopMotors();
@@ -74,7 +77,12 @@ void setup(){
   // initialize the motors to stop...(Left,Right,Speed[0..255],waitMsec)
   PrintEncoders();
   //int Drive(DriveDirection, int drive_speed, float drive_distance); 
-  Drive(DRIVE_DIR_FWD,100,25); // 100% for 10inches
+  Drive(DRIVE_DIR_FWD,100,25.0); // 100% power for 25 inches
+  StopMotors();
+  delay(1000);
+  
+  //void Turn(TurnType turn_type, TurnDirection turn_dir, int drive_speed, float drive_distance); 
+  Turn(TURN_TYPE_SWING, TURN_LEFT, 100, 10.2);
   StopMotors();
   PrintEncoders();
 }
@@ -188,37 +196,77 @@ void ResetEncoders(){
   encoder[RIGHT]  = 0;
 }
 
-void Turn(TurnType turn_type,TurnDirection turn_dir, int target_speed, int drive_distance){
+void Turn(TurnType turn_type,TurnDirection turn_dir, int target_speed, float drive_distance){
+  int left_motor_speed   = 0;
+  int right_motor_speed  = 0;
+  
+  Serial3.print("InTurn: " + String(turn_type) + "-Dir:" + String(turn_dir) + " Spd:" + String(target_speed));
   // translate inches to encoder target
   int enc_target = CalculateEncoderTarget(drive_distance);
+  ResetEncoders(); // clear the previous runs
+  
   // swing turns first: to the left
   if ((turn_type == TURN_TYPE_SWING) && (turn_dir == TURN_LEFT)){
-    Motor_Left.setSpeed(0);
-    Motor_Right.setSpeed(SetSpeed(encoder[RIGHT], enc_target, target_speed));
-    Motor_Left.run(RELEASE);
-    Motor_Right.run(FORWARD);
+    while(encoder[RIGHT] < enc_target){
+      // Separating speed setting routine so that we can print it out/debug
+      right_motor_speed   = SetSpeed(encoder[RIGHT], enc_target, target_speed);
+  
+      Motor_Left.setSpeed(0);
+      Motor_Right.setSpeed(right_motor_speed);
+
+      Motor_Left.run(RELEASE);
+      Motor_Right.run(FORWARD);
+      delay(100); // keep going
+    }
   }
   // swing turns first: to the right
   if ((turn_type == TURN_TYPE_SWING) && (turn_dir == TURN_RIGHT)){
-    Motor_Left.setSpeed(SetSpeed(encoder[LEFT], enc_target, target_speed));
-    Motor_Right.setSpeed(0);
-    Motor_Left.run(FORWARD);
-    Motor_Right.run(RELEASE);
+    while(encoder[LEFT] < enc_target){
+      // Separating speed setting routine so that we can print it out/debug
+      left_motor_speed   = SetSpeed(encoder[LEFT], enc_target, target_speed);
+      
+      // now use it...
+      Motor_Left.setSpeed(left_motor_speed);
+      Motor_Right.setSpeed(0);
+
+      Motor_Left.run(FORWARD);
+      Motor_Right.run(RELEASE);   
+      delay(100); // keep going
+    }
   }
   // point turns (i.e. Rotation in place): to the left...
+  Serial3.println("CE:" + String(encoder[LEFT]) + " TE:" + String(enc_target) + " Spd:" + String(target_speed));
   if ((turn_type == TURN_TYPE_POINT) && (turn_dir == TURN_LEFT)){
-    Motor_Left.setSpeed(SetSpeed(encoder[LEFT], enc_target, target_speed));
-    Motor_Right.setSpeed(SetSpeed(encoder[RIGHT], enc_target, target_speed));
-    Motor_Left.run(BACKWARD);
-    Motor_Right.run(FORWARD);
+    Serial3.println("In POINT::LEFT");
+    while(encoder[RIGHT] < enc_target){
+      // Separating speed setting routine so that we can print it out/debug
+      left_motor_speed   = SetSpeed(encoder[LEFT], enc_target, target_speed);
+      right_motor_speed  = SetSpeed(encoder[RIGHT], enc_target, target_speed);
+      // now use it...
+      Motor_Left.setSpeed(left_motor_speed);
+      Motor_Right.setSpeed(right_motor_speed);
+    
+      Motor_Left.run(BACKWARD);
+      Motor_Right.run(FORWARD);
+      delay(100); // keep going
+      Serial3.println("-RE:" + String(encoder[RIGHT]) + "-TE:" + String(enc_target) + " LS:" + String(left_motor_speed) + " RS:" + String(right_motor_speed));
+    }
   }
-  // point turns (i.e. Rotation in place): to the right...
+  // point turns (i.e. Rotation in place): to the right
+  // fails compile here, tried copying procedure above (which does compile)
+  // won't turn right for now :)
   if ((turn_type == TURN_TYPE_POINT) && (turn_dir == TURN_RIGHT)){
     Motor_Left.setSpeed(SetSpeed(encoder[LEFT], enc_target, target_speed));
     Motor_Right.setSpeed(SetSpeed(encoder[RIGHT], enc_target, target_speed));
-    Motor_Left.run(FORWARD);
-    Motor_Right.run(BACKWARD);
-  } 
+    // FORWARD=1, BACKWARD=2, failing on compile - trying magic numbers
+    //Motor_Left.run(FORWARD);
+    //Motor_Right.run(BACKWARD);
+    //while(enc_target < encoder[LEFT]){
+    //  delay(100); // keep going
+    //}
+  }
+  StopMotors();
+  ResetEncoders();
 }
 
 int CalculateEncoderTarget(float distance_inches){
